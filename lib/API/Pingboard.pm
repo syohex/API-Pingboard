@@ -3,15 +3,11 @@ package API::Pingboard;
 use Moose;
 use MooseX::Params::Validate;
 use MooseX::WithCache;
-use File::Spec::Functions; # catfile
-use MIME::Base64;
-use File::Path qw/make_path/;
 use LWP::UserAgent;
 use HTTP::Request;
 use HTTP::Headers;
 use JSON::MaybeXS;
 use YAML;
-use URI::Encode qw/uri_encode/;
 use Encode;
 
 our $VERSION = 0.019;
@@ -26,11 +22,10 @@ Interaction with Pingboard
 
 This module uses MooseX::Log::Log4perl for logging - be sure to initialize!
 
-=head1 ATTRIBUTES
-
 =cut
 
-with "MooseX::Log::Log4perl";
+
+=head1 ATTRIBUTES
 
 =over 4
 
@@ -42,18 +37,20 @@ Provided by MooseX::WithX - optionally pass a Cache::FileCache object to cache a
 
 =cut
 
+with "MooseX::Log::Log4perl";
+
 # Unfortunately it is necessary to define the cache type to be expected here with 'backend'
 # TODO a way to be more generic with cache backend would be better
 with 'MooseX::WithCache' => {
     backend => 'Cache::FileCache',
 };
 
-=item oauth_access_token
+=item access_token
 
 Required.
 
 =cut
-has 'oauth_access_token' => (
+has 'access_token' => (
     is          => 'ro',
     isa         => 'Str',
     required    => 1,
@@ -62,7 +59,6 @@ has 'oauth_access_token' => (
 # TODO Username and password login not working yet
 =item password
 
-Required.
 
 =cut
 has 'password' => (
@@ -73,13 +69,25 @@ has 'password' => (
 
 =item username
 
-Required.
 
 =cut
 has 'username' => (
     is          => 'ro',
     isa         => 'Str',
     required    => 0,
+    );
+
+=item timeout
+
+Timeout when communicating with Pingboard in seconds.  Optional.  Default: 10 
+Will only be in effect if you allow the useragent to be built in this module.
+
+=cut
+has 'timeout' => (
+    is          => 'ro',
+    isa         => 'Int',
+    required    => 1,
+    default     => 10,
     );
 
 =item default_backoff
@@ -153,7 +161,8 @@ sub _build_user_agent {
     my $self = shift;
     $self->log->debug( "Building useragent" );
     my $ua = LWP::UserAgent->new(
-	keep_alive	=> 1
+	keep_alive	=> 1,
+        timeout         => $self->timeout,
     );
     return $ua;
 }
@@ -164,7 +173,7 @@ sub _build_default_headers {
     $h->header( 'Content-Type'	=> "application/json" );
     $h->header( 'Accept'	=> "application/json" );
     # Only oauth works for now
-    $h->header( 'Authorization' => "Bearer " . $self->oauth_access_token );
+    $h->header( 'Authorization' => "Bearer " . $self->access_token );
     return $h;
 }
 
@@ -187,7 +196,7 @@ sub init {
     my $ua = $self->user_agent;
 }
 
-=item get_user
+=item get_users
 
 =over 4
 
@@ -197,16 +206,103 @@ The user id to get
 
 =cut
 
-sub get_user {
+sub get_users {
     my ( $self, %params ) = validated_hash(
         \@_,
-        id	=> { isa    => 'Int' }
+        id	=> { isa    => 'Int', optional => 1 },
+        size    => { isa    => 'Int', optional => 1 },
 	);
-    my $response = $self->_request_from_api(
-        method  => 'GET',
-        path    => '/users/' . $params{id},
-        );
-    return $response;
+    $params{field}  = 'users';
+    $params{path}   = 'users' . ( $params{id} ? '/' . $params{id} : '' );
+    delete( $params{id} );
+    return $self->_paged_request_from_api( %params );
+}
+
+=item get_groups
+
+=over 4
+
+=item id (optional)
+
+The group id to get
+
+=cut
+
+sub get_groups {
+    my ( $self, %params ) = validated_hash(
+        \@_,
+        id	=> { isa    => 'Int', optional => 1 },
+        size    => { isa    => 'Int', optional => 1 },
+	);
+    $params{field}  = 'groups';
+    $params{path}   = 'groups' . ( $params{id} ? '/' . $params{id} : '' );
+    delete( $params{id} );
+    return $self->_paged_request_from_api( %params );
+}
+
+=item get_custom_fields
+
+=over 4
+
+=item id (optional)
+
+The resource id to get
+
+=cut
+
+sub get_custom_fields {
+    my ( $self, %params ) = validated_hash(
+        \@_,
+        id	=> { isa    => 'Int', optional => 1 },
+        size    => { isa    => 'Int', optional => 1 },
+	);
+    $params{field}  = 'custom_fields';
+    $params{path}   = 'custom_fields' . ( $params{id} ? '/' . $params{id} : '' );
+    delete( $params{id} );
+    return $self->_paged_request_from_api( %params );
+}
+
+=item get_linked_accounts
+
+=over 4
+
+=item id
+
+The resource id to get
+
+=cut
+
+sub get_linked_accounts {
+    my ( $self, %params ) = validated_hash(
+        \@_,
+        id	=> { isa    => 'Int'},
+	);
+    $params{field}  = 'linked_accounts';
+    $params{path}   = 'linked_accounts/' . $params{id};
+    delete( $params{id} );
+    return $self->_paged_request_from_api( %params );
+}
+
+=item get_linked_account_providers
+
+=over 4
+
+=item id (optional)
+
+The resource id to get
+
+=cut
+
+sub get_linked_account_providers {
+    my ( $self, %params ) = validated_hash(
+        \@_,
+        id	=> { isa    => 'Int', optional => 1 },
+        size    => { isa    => 'Int', optional => 1 },
+	);
+    $params{field}  = 'linked_account_providers';
+    $params{path}   = 'linked_account_providers' . ( $params{id} ? '/' . $params{id} : '' );
+    delete( $params{id} );
+    return $self->_paged_request_from_api( %params );
 }
 
 =item get_statuses
@@ -222,15 +318,15 @@ The resource id to get
 sub get_statuses {
     my ( $self, %params ) = validated_hash(
         \@_,
-        id	=> { isa    => 'Int', optional => 1 }
+        id	=> { isa    => 'Int', optional => 1 },
+        size    => { isa    => 'Int', optional => 1 },
 	);
-    my @statuses = $self->_paged_get_request_from_api(
-        method  => 'GET',
-        field   => 'statuses',
-        path    => '/statuses' . ( $params{id} ? '/' . $params{id} : '' ),
-        );
-    return @statuses;
+    $params{field}  = 'statuses';
+    $params{path}   = 'statuses' . ( $params{id} ? '/' . $params{id} : '' );
+    delete( $params{id} );
+    return $self->_paged_request_from_api( %params );
 }
+
 
 =item clear_cache_object_id
 
@@ -259,10 +355,10 @@ sub clear_cache_object_id {
     return $foo;
 }
 
-sub _paged_get_request_from_api {
+sub _paged_request_from_api {
     my ( $self, %params ) = validated_hash(
         \@_,
-        method	=> { isa => 'Str', optional => 1 },
+        method	=> { isa => 'Str', optional => 1, default => 'GET' },
 	path	=> { isa => 'Str' },
         field   => { isa => 'Str' },
         size    => { isa => 'Int', optional => 1 },
@@ -273,13 +369,12 @@ sub _paged_get_request_from_api {
     my $response = undef;
     do{
         $response = $self->_request_from_api(
-            method      => ( $params{method} || 'GET' ),
-            path        => $params{path} . ( $params{path} =~ m/\?/ ? '&' : '?' ) . 'page=' . $page,
+            method      => $params{method},
+            path        => $params{path} . ( $page > 1 ? ( $params{path} =~ m/\?/ ? '&' : '?' ) . 'page=' . $page : '' ),
             );
 	push( @results, @{ $response->{$params{field} } } );
 	$page++;
       }while( $response->{meta}{$params{field}}{page} < $response->{meta}{$params{field}}{page_count} and ( not $params{size} or scalar( @results ) < $params{size} ) );
-
     return @results;
 }
 
