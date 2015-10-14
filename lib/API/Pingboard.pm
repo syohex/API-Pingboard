@@ -10,7 +10,7 @@ use JSON::MaybeXS;
 use YAML;
 use Encode;
 
-our $VERSION = 0.019;
+our $VERSION = 0.002;
 
 =head1 NAME
 
