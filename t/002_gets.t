@@ -9,9 +9,7 @@ Log::Log4perl->easy_init($DEBUG);
 use YAML;
 
 if( not $ENV{PINGBOARD_ACCESS_TOKEN} ){
-    fail( "!!! Environment variable PINGBOARD_ACCESS_TOKEN was not defined, so live tests not being executed !!!" );
-    done_testing();
-    exit(0);
+    plan skip_all => "!!! Environment variable PINGBOARD_ACCESS_TOKEN was not defined, so live tests not being executed !!!";
 }
 
 # Setting more aggressive timeout/backoff/retries so that testing does not take forever
